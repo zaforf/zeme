@@ -1,0 +1,11 @@
+(display "what is your name? ") (define name (read))
+
+(display "hello, ") (display name)
+(display ", what factorial would you like? ")
+
+(define (fact f)
+	(if (< f 2)
+		1
+		(* f (fact (- f 1)))))
+
+(display (fact (read))) (newline)
