@@ -4,4 +4,5 @@
 (define (right x y) y)
 
 (display ((left add mul) 2 3))
+(display ((right add mul) 2 3))
 (display "\n")

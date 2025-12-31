@@ -1,5 +1,4 @@
-import sys
-import regex
+import sys, regex, uuid
 
 # define is the only true built in
 # functions can have no args
@@ -15,78 +14,82 @@ import regex
 
 # function result should be in parens if it should be evaluated and non void (as a function) (suggestion)
 
-scope = {}
+# need to fix arg handling of symbols
+# define to a lambda is TODO
 
-builtins = [
-	'(define (* x y) (x * y))',
-	'(define (+ x y) (x + y))',
-	'(define (- x y) (x - y))',
+literal = lambda x: (lambda r: '"' + r[1:-1] + '"' if r.startswith("'") else r)(repr(x))
+clean = lambda s: regex.sub(r'("[^"]*")|\s+', lambda m: m.group(1) or " ", s.replace("\\", "\\\\"))
 
-	'(define (= x y) (x == y))',
-	'(define (< x y) (x < y))',
+scope, subs, read = {}, {}, []
 
-	'(define (if x y z) (if x y z))',
+builtins = """
+(define (* x y) (x * y)) (define (+ x y) (x + y)) (define (- x y) (x - y))
+(define (= x y) (x == y)) (define (< x y) (x < y))
+(define (if x y z) (if x y z)) (define (read) (read))
+(define (define a b) a=b)
+(define (display s) print(s,end="")) (define (newline) (display "\\n"))
+"""
 
-	'(define (define a b) global a;a=b)', # adds support for variables
-	'(define (display s) print(s,end=""))',
-   r'(define (newline) (display "\n"))',
-	'(define (read) (read))',
-]
-
-red = []
 process = {
-	"if":   lambda m, x: m.group(3 if eval(m.group(2)) else 4),
-	"read": lambda m, x: repr(red[0]) if red else (red.append(int(r) if (r:=input()).isdigit() else r) or repr(red[0]))
+    "if":   lambda m, x: m.group(3 if eval(m.group(2), scope) else 4),
+    "read": lambda m, x: literal(read[0]) if read else (read.append(int(r) if (r:=input()).lstrip('-').isdigit() else r) or literal(read[0]))
 }
 
-defn, arg_cap = '(?(DEFINE)(?P<rec>\\((?:[^()]|(?&rec))*\\)|"[^"]*"|[^\\s()]+))', '\\s+((?&rec))'
+defn, arg_cap = r'(?(DEFINE)(?P<rec>\((?:[^()]|(?&rec))*\)|"[^"]*"|[^\s()]+))', r'\s+((?&rec))'
+
+lambda_def = fr"{defn}\(\s*lambda\s+\((?P<params>[^)]*)\)\s+(?P<body>(?&rec))\s*\)"
+lambda_pattern = fr"\({lambda_def}(?:\s*(?P<arg>(?&rec)))+\s*\)"
+
+def alpha_convert(code):
+    def converter(m):
+        params = m.group("params").split()
+        body = alpha_convert(m.group("body"))
+
+        renaming = {p: f"{p.split('_')[0]}_{uuid.uuid4().hex[:4]}" for p in params}
+        for old, new in renaming.items():
+            body = regex.sub(fr"(?<=^|\W){old}(?=$|\W)", new, body)
+        return f"(lambda ({' '.join(renaming.values())}) {body})"
+    return regex.sub(lambda_def, converter, code)
+
+def lambda_processor(m):
+    body = clean(m.group("body"))
+    params, args = m.group("params").split(), m.captures("arg")
+    for param, arg in zip(params, args):
+        body = regex.sub(fr"(?<=^|\W){param}(?=$|\W)", arg, body)
+    return alpha_convert(body)
+
+subs[lambda_pattern] = lambda_processor
 
 def main():
-	if len(sys.argv) < 2: return print("expected filename")
-	source = open(sys.argv[1]).read()
+    if len(sys.argv) < 2: return print("expected filename")
+    
+    source = alpha_convert(builtins + "\n" + open(sys.argv[1]).read())
+    statements = regex.findall(r"(\((?:[^()]|(?R))*\))", source)
 
-	statements = regex.findall("(\\((?:[^()]|(?R))*\\))", source)
-	subs = {}
+    for statement in statements:
+        if match := regex.match(r'\(\s*define\s+\((?P<sig>[^)]+)\)\s+(?P<body>.*)\s*\)', statement, regex.DOTALL):
+            name, *params = match.group("sig").split()
+            body = clean(match.group("body"))
 
-	lens = []
-	for statement in builtins + statements:
-		if match := regex.match(r'\(define\s+\((?P<sig>[^)]+)\)\s+(?P<body>.*)\)', statement, regex.DOTALL):
-			name, *args = match.group("sig").split()
+            for i, p in enumerate(params):
+                body = regex.sub(fr"(?<=^|\W){p}(?=$|\W)", fr"\\{i+2}", body)
 
-			replace = match.group("body").replace("\\", "\\\\")
-			# compress spaces but not if in quotes
-			replace = regex.sub(r'("[^"]*")|\s+', lambda m: m.group(1) or " ", replace)
+            pattern = fr"{defn}\(\s*{regex.escape(name)}{arg_cap * len(params)}\s*\)"
 
-			for i, arg in enumerate(args):
-				replace = regex.sub(fr"(?<=^|\W){arg}(?=$|\W)", fr"\\{i+2}", replace)
+            def processor(match, n=name, t=body):
+                expanded = match.expand(t)
+                try: return process.get(n, lambda m, x: literal(eval(x, scope)))(match, expanded)
+                except (NameError, SyntaxError): return expanded
+            
+            subs[pattern] = processor
 
-			name = regex.escape(name)
-			pattern = fr"\({defn}{name}{arg_cap * len(args)}\)"
-			# print(pattern,replace)
-
-			def processor(match, n=name, t=replace):
-				expanded = match.expand(t)
-				try: return process.get(n, lambda m, x: repr(eval(x)))(match, expanded)
-				except (NameError, SyntaxError): return expanded
-			subs[pattern] = processor
-
-		else:
-			# some preprocessing
-			changes = 1
-			mxlen, cycles = 0, 0
-			while changes != 0:
-				changes = 0
-				for pattern, replace in subs.items():
-					statement, count = regex.subn(pattern, replace, statement)
-					changes += count
-					mxlen = max(mxlen, len(statement))
-				cycles += 1
-				# print(statement)
-
-			lens.append((mxlen, cycles))
-			exec(statement, scope, {})
-			red.clear() # for read
-
-	print(lens)
+        else:
+            prev = None
+            while statement != prev:
+                prev = statement
+                for pattern, func in subs.items():
+                    statement = regex.sub(pattern, func, statement)
+            exec(statement, scope)
+            read.clear()
 
 if __name__ == "__main__": main()
