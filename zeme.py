@@ -32,6 +32,7 @@ builtins = """
 
 process = {
     "if":   lambda m, x: m.group(3 if eval(m.group(2), scope) else 4),
+    # with the addition of partial evaluation, read isnt evaluated all at once, so logic moves here
     "read": lambda m, x: literal(read[0]) if read else (read.append(int(r) if (r:=input()).lstrip('-').isdigit() else r) or literal(read[0]))
 }
 
