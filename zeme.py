@@ -90,7 +90,6 @@ def main():
                 prev = statement
                 for pattern, func in subs.items():
                     statement = regex.sub(pattern, func, statement)
-                print(statement)
             exec(statement, scope)
             read.clear()
 
