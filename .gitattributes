@@ -1,1 +1,3 @@
 *.zm linguist-language=Scheme
+examples/** linguist-documentation=false
+examples/** linguist-detectable=true
