@@ -1,10 +1,11 @@
 # zeme
 
-A code-golfed, Scheme-subset interpreter that abuses find and replace. Function definitions get compiled into regex patterns, and expressions are rewritten until Python can evaluate them. Some highlights:
+A code-golfed, Scheme-subset interpreter that abuses find and replace.
 
-- Beta reduction is essentially find and replace, which is what inspired this janky project
-- Lambdas use alpha conversion (variable renaming) to avoid variable capture, another functional programming concept
-- Partial evaluation: `if` conditions are evaluated during expansion when possible. This allows unlimited recursion; before it, there was a hard cap on the number of expansions and thus recursion depth.
+- While studying functional programming, I realized beta reduction was basically just find and replace, which inspired this project.
+- All functions, including those defined by the user, get compiled into regex. During evaluation, the regex is continually applied until the result can be evaluated in Python via `exec()`.
+- Lambdas use alpha conversion (variable renaming) to avoid variable capture, another functional programming concept.
+- Partial evaluation: the conditions of `if` expressions are evaluated during expansion when possible. This allows unlimited recursion; before, there was a hard cap on the number of expansions and thus recursion depth.
 
 ```scheme
 (define (fact n)
